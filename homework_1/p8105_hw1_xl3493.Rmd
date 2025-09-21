@@ -1,0 +1,147 @@
+---
+title: "Homework 1"
+author: "Xuange Liang (xl3493)"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 1
+
+Loading required libraries and dataset:
+
+```{r load_libraries_and_data}
+library(moderndive)
+library(ggplot2)
+library(tidyverse)
+
+data("early_january_weather")
+```
+
+### Dataset Description
+
+The `early_january_weather` dataset contains weather data from the early days of January. The dataset includes `r ncol(early_january_weather)` variables and `r nrow(early_january_weather)` observations.
+
+Key variables in this dataset include:
+
+- `temp`: Temperature measurements (in Fahrenheit)
+- `time_hour`: Date and hour of the observation
+- `humid`: Humidity levels
+- `wind_speed`: Wind speed measurements
+- `precip`: Precipitation amounts
+- `pressure`: Atmospheric pressure
+- `visib`: Visibility measurements
+
+The dataset has `r nrow(early_january_weather)` rows and `r ncol(early_january_weather)` columns. The mean temperature is `r round(mean(early_january_weather$temp, na.rm = TRUE), 2)` degrees Fahrenheit.
+
+### Scatterplot
+
+```{r temperature_scatterplot}
+weather_plot <- ggplot(early_january_weather, aes(x = time_hour, y = temp, color = humid)) +
+  geom_point() +
+  labs(
+    title = "Temperature vs Time Colored by Humidity",
+    x = "Time (Hour)",
+    y = "Temperature (°F)",
+    color = "Humidity"
+  ) +
+  theme_minimal()
+
+weather_plot
+```
+
+**Patterns observed in the plot:**
+
+1. **Daily temperature cycles**: There's a clear daily pattern where temperatures rise during the day and fall at night, creating a cyclical pattern.
+
+2. **Overall warming trend**: Over the time period shown, there appears to be a general increase in temperature from the beginning to the end of the observation period.
+
+3. **Humidity relationship**: Lower humidity levels (darker colors) tend to be associated with higher temperatures, while higher humidity (lighter colors) often corresponds with lower temperatures.
+
+4. **Temperature range**: Temperatures vary roughly between 25°F and 60°F during this early January period.
+
+Exporting the scatterplot:
+
+```{r save_plot}
+ggsave("weather_scatterplot.png", plot = weather_plot, width = 8, height = 6)
+```
+
+## Problem 2
+
+Creating a data frame with different variable types:
+
+```{r create_dataframe}
+set.seed(123)
+
+problem2_df <- data.frame(
+  random_sample = rnorm(10),
+  logical_vec = rnorm(10) > 0,
+  character_vec = c("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"),
+  factor_vec = factor(c("level1", "level2", "level3", "level4", "level5", 
+                       "level6", "level7", "level8", "level9", "level10"))
+)
+
+problem2_df
+```
+
+### Taking the mean of each variable
+
+```{r take_means}
+mean_random <- mean(pull(problem2_df, random_sample))
+mean_logical <- mean(pull(problem2_df, logical_vec))
+
+mean_random
+mean_logical
+```
+
+Attempting to take the mean of character and factor variables:
+
+```{r mean_attempts, eval=FALSE}
+mean_character <- mean(pull(problem2_df, character_vec))
+mean_factor <- mean(pull(problem2_df, factor_vec))
+
+mean_character
+mean_factor
+```
+
+**What works and what doesn't:**
+
+- **Numeric variable (random_sample)**: Works - returns the mean value
+- **Logical variable (logical_vec)**: Works - R treats TRUE as 1 and FALSE as 0, so it calculates the proportion of TRUE values
+- **Character variable (character_vec)**: Doesn't work - returns NA with a warning because characters cannot be averaged
+- **Factor variable (factor_vec)**: Doesn't work - returns NA with a warning because factors are not numeric
+
+### Variable conversion with as.numeric()
+
+```{r convert_to_numeric, eval=TRUE, results='hide', warning=FALSE}
+numeric_logical <- as.numeric(pull(problem2_df, logical_vec))
+numeric_character <- as.numeric(pull(problem2_df, character_vec))
+numeric_factor <- as.numeric(pull(problem2_df, factor_vec))
+
+numeric_logical
+numeric_character
+numeric_factor
+```
+
+**What happens and why:**
+
+1. **Logical to numeric**: Converts TRUE to 1 and FALSE to 0. This works because logical values have a natural numeric representation.
+
+2. **Character to numeric**: Results in NA values with a warning because the character strings ("a", "b", "c", etc.) cannot be meaningfully converted to numbers.
+
+3. **Factor to numeric**: Converts factors to their underlying integer codes (1, 2, 3 corresponding to the factor levels), not the actual level names.
+
+**Does this help explain the mean behavior?**
+
+Yes, this explains why:
+
+- Logical variables can have their mean calculated (they convert to 0s and 1s)
+- Character variables cannot (they cannot be converted to meaningful numbers)
+- Factor variables cannot have their mean calculated in a meaningful way (the underlying integer codes don't represent meaningful numeric values for averaging)
+
+The `as.numeric()` conversion reveals the underlying structure that R uses when it attempts to perform numeric operations on different data types.
+
+
