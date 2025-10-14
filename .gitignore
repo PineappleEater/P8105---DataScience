@@ -1,18 +1,19 @@
 .claude
+*.json
+*.csv
+*.txt
+results/
 
 # Data files - too large for git
-homework_2/data/
+data/
 
 # R and RStudio files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
-*.Rproj
 
 # Output files
-*.html
-*.md
 *_files/
 *_cache/
 

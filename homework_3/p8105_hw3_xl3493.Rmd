@@ -1,0 +1,461 @@
+---
+title: "Homework 3"
+author: "Xuange Liang (xl3493)"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Problem 1: Instacart Data Analysis
+
+This problem explores the Instacart online grocery shopping dataset to understand purchasing patterns and popular products.
+
+### Loading required libraries and data
+
+```{r load_libraries_and_instacart}
+library(tidyverse)
+library(p8105.datasets)
+
+data("instacart")
+```
+
+### Dataset Description
+
+
+
+```{r describe_instacart}
+# Explore dataset structure
+str(instacart) # Structure of the dataset
+nrow(instacart) # Number of rows
+ncol(instacart) # Number of columns
+
+# View dataset dimensions
+dim(instacart) # Dimensions of the dataset
+
+
+# Show example observations
+head(instacart)
+tail(instacart)
+```
+
+<!-- Write a description:
+The dataset contains ___ rows and ___ columns. Main variables include:
+- 
+- 
+- 
+
+Example observations:
+
+
+-->
+The dataset contains **`r nrow(instacart)`** rows and **`r ncol(instacart)`** columns. Main variables include:
+- `order_id`: Unique identifier for each order
+- `product_id`: Unique identifier for each product
+- `add_to_cart_order`: Order in which the product was added to the cart
+- `reordered`: Whether the product was reordered (1) or not (0)
+- `user_id`: Unique identifier for each user
+- `order_number`: Order number for each user
+- `eval_set`: Evaluation set (train, test, or prior) to which the order belongs
+
+Example observations:
+
+```{r example_observations}
+head(instacart)
+```
+### How many aisles, and which are most popular?
+
+
+
+```{r count_aisles}
+# Count total number of aisles
+n_distinct(instacart$aisle)
+
+# Find aisles with most orders
+instacart %>%
+  group_by(aisle) %>%
+  summarize(order_count = n()) %>%
+  arrange(desc(order_count))
+```
+
+There are **`r n_distinct(instacart$aisle)`** aisles in the dataset. The most popular aisles are fresh vegetables and fresh fruits, with over 150,000 items ordered from each.
+
+### Plot: Items ordered in each aisle (>10000 items)
+
+
+
+```{r plot_aisles}
+# Filter and count aisles with >10000 items
+aisles_filtered <- instacart %>%
+  group_by(aisle) %>%
+  summarize(order_count = n()) %>%
+  filter(order_count > 10000)
+
+# Create plot
+ggplot(aisles_filtered, aes(x = reorder(aisle, order_count), y = order_count)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Items Ordered in Each Aisle (>10000 items)",
+       x = "Aisle",
+       y = "Number of Items Ordered")
+```
+
+The plot shows that fresh vegetables and fresh fruits are by far the most popular aisles. Most aisles with over 10,000 items fall into produce, dairy, and snack categories. The ordering makes it easy to identify the top sellers.
+
+### Table: Top 3 items in specific aisles
+
+
+
+```{r top_items_table}
+# Filter the three specified aisles and find most popular products
+top_items <- instacart %>%
+  filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) %>%
+  group_by(aisle, product_name) %>%
+  summarize(n_orders = n(), .groups = "drop") %>%
+  group_by(aisle) %>%
+  slice_max(n_orders, n = 3) %>%
+  arrange(aisle, desc(n_orders))
+
+# Create table
+knitr::kable(top_items, 
+             caption = "Top 3 Items in Selected Aisles")
+```
+
+Light brown sugar is the most popular baking ingredient with 499 orders. In dog food care, Snack Sticks Chicken & Rice Recipe leads with 30 orders. For packaged vegetables and fruits, organic baby spinach dominates with 9,784 orders.
+
+### Table: Mean hour of purchase for specific items
+
+
+
+```{r mean_hour_table}
+# Filter products and calculate mean purchase time
+mean_hour_data <- instacart %>%
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>%
+  group_by(product_name, order_dow) %>%
+  summarize(mean_hour = mean(order_hour_of_day), .groups = "drop")
+
+# Convert to wide format table
+mean_hour_table <- mean_hour_data %>%
+  pivot_wider(
+    names_from = order_dow,
+    values_from = mean_hour
+  ) %>%
+  rename(
+    Product = product_name,
+    Sun = `0`, Mon = `1`, Tue = `2`, Wed = `3`,
+    Thu = `4`, Fri = `5`, Sat = `6`
+  )
+
+# Format table
+knitr::kable(mean_hour_table, 
+             digits = 2,
+             caption = "Mean Hour of Day for Product Orders")
+```
+
+Both products are typically purchased in the afternoon, with mean hours ranging from about 11 to 15. Pink Lady Apples tend to be ordered slightly earlier in the day compared to Coffee Ice Cream, particularly on weekdays.
+
+---
+
+## Problem 2: Zillow Rental Data Analysis
+
+This problem analyzes rental price trends across New York City ZIP codes using Zillow data.
+
+### Import and clean the data
+
+
+
+```{r import_zillow_data}
+library(janitor)
+
+# Read ZIP code data
+zip_codes <- read_csv("../homework_2/data/zillow_data/Zip Codes.csv") %>%
+  clean_names() %>%
+  rename(zip = zip_code, borough = county) %>%
+  select(zip, borough, neighborhood)
+
+# Read rental price data
+rental_data <- read_csv("../homework_2/data/zillow_data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv") %>%
+  clean_names() %>%
+  select(region_name, starts_with("x")) %>%
+  rename(zip = region_name) %>%
+  pivot_longer(
+    cols = starts_with("x"),
+    names_to = "date",
+    values_to = "rental_price",
+    names_prefix = "x"
+  ) %>%
+  mutate(
+    date = as.Date(date, format = "%Y_%m_%d"),
+    year = year(date),
+    month = month(date)
+  ) %>%
+  filter(date >= as.Date("2015-01-01"), date <= as.Date("2024-08-31"))
+
+# Merge datasets
+rental_combined <- rental_data %>%
+  left_join(zip_codes, by = "zip") %>%
+  filter(!is.na(borough))
+```
+
+### ZIP code observation frequency
+
+
+
+```{r zip_observation_frequency}
+# Count observations for each ZIP code
+zip_freq <- rental_combined %>%
+  count(zip, name = "n_obs")
+
+# Count ZIP codes observed 116 times
+full_obs <- zip_freq %>% filter(n_obs == 116) %>% nrow()
+
+# Count ZIP codes observed fewer than 10 times
+rare_obs <- zip_freq %>% filter(n_obs < 10) %>% nrow()
+```
+
+**`r full_obs`** ZIP codes are observed all 116 times (complete data from Jan 2015 to Aug 2024). **`r rare_obs`** ZIP codes are observed fewer than 10 times.
+
+Some ZIP codes are observed rarely because:
+1. They may be primarily commercial or industrial areas with limited residential rental properties
+2. Zillow may exclude areas with insufficient market data to calculate reliable rent indices
+3. Some neighborhoods have predominantly public housing or rent-controlled units not reflected in market rates
+
+### Table: Average rental price by borough and year
+
+
+
+```{r borough_year_table}
+# Calculate average rental price by borough and year
+borough_year_avg <- rental_combined %>%
+  group_by(borough, year) %>%
+  summarize(avg_rent = mean(rental_price, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from = year,
+    values_from = avg_rent
+  )
+
+# Create table
+knitr::kable(borough_year_avg, 
+             digits = 0,
+             caption = "Average Rental Price by Borough and Year")
+```
+
+Rental prices generally increased from 2015 to 2019 across most boroughs, though with some fluctuations. The Bronx experienced a decline in 2016 before resuming growth. During 2020-2021, Manhattan and Brooklyn showed notable declines, likely due to COVID-19. Prices have since recovered and continued rising. Manhattan consistently has the highest rents, followed by Brooklyn. The Bronx and Staten Island have the most affordable rents.
+
+### Plot: NYC rental prices by ZIP code across years
+
+
+
+```{r plot_rental_trends}
+# Create rental price trend plot
+plot_trends <- ggplot(rental_combined, aes(x = date, y = rental_price, group = zip)) +
+  geom_line(alpha = 0.3, size = 0.3) +
+  facet_wrap(~borough, scales = "free_y") +
+  labs(
+    title = "NYC Rental Price Trends by ZIP Code (2015-2024)",
+    x = "Date",
+    y = "Rental Price ($)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_trends
+```
+
+The plot reveals several trends:
+1. Manhattan experienced a clear dip during 2020-2021 (pandemic), with significant variation across ZIP codes
+2. Brooklyn shows similar patterns but with less dramatic drops
+3. Queens, Bronx, and Staten Island show more stable, gradual increases
+
+Manhattan has the highest price range and variability. All boroughs show recovery and growth post-2021.
+
+### Plot: Distribution of 2023 rental prices by borough
+
+
+
+```{r plot_2023_distribution}
+# Calculate average rental price for each ZIP code in 2023
+rental_2023 <- rental_combined %>%
+  filter(year == 2023) %>%
+  group_by(borough, zip) %>%
+  summarize(avg_rent = mean(rental_price, na.rm = TRUE), .groups = "drop")
+
+# Create distribution plot
+plot_distribution <- ggplot(rental_2023, aes(x = borough, y = avg_rent, fill = borough)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Average 2023 Rental Prices by Borough",
+    x = "Borough",
+    y = "Average Rental Price ($)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot_distribution
+```
+
+Manhattan has the highest median rent (~$3,800) with substantial variation and several high-end outliers exceeding $6,000. Brooklyn follows with median around $3,200. Queens, Bronx, and Staten Island cluster in the $2,000-$2,500 range with less variation and fewer outliers.
+
+### Combined plot and export
+
+
+
+```{r combine_and_export}
+library(patchwork)
+
+# Create results folder
+if (!dir.exists("results")) {
+    dir.create("results")
+}
+
+# Combine the two previous plots
+combined_plot <- plot_trends / plot_distribution
+
+# Export plot
+ggsave("results/zillow_rental_analysis.png", 
+       combined_plot, 
+       width = 12, 
+       height = 10)
+
+combined_plot
+```
+
+---
+
+## Problem 3: NHANES Accelerometer Data
+
+This problem analyzes physical activity patterns using accelerometer data from the NHANES study.
+
+### Load and tidy the datasets
+
+
+
+```{r load_nhanes_data}
+# NOTE: Download data files from the links provided in homework instructions
+# Save nhanes_covar.csv and nhanes_accel.csv to the data/ folder before running
+
+# Read demographic data
+demographic <- read_csv("data/nhanes_covar.csv", skip = 4) %>%
+  clean_names() %>%
+  filter(age >= 21) %>%
+  drop_na() %>%
+  mutate(
+    sex = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    education = factor(education, 
+                      levels = c(1, 2, 3),
+                      labels = c("Less than high school", 
+                                "High school equivalent", 
+                                "More than high school"))
+  )
+
+# Read accelerometer data
+accelerometer <- read_csv("data/nhanes_accel.csv") %>%
+  clean_names()
+
+# Merge datasets
+nhanes_data <- demographic %>%
+  inner_join(accelerometer, by = "seqn")
+```
+
+### Table and visualization: Demographics by education
+
+
+
+```{r demographics_table}
+# Create participant count table
+demographics_summary <- nhanes_data %>%
+  group_by(education, sex) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = sex,
+    values_from = count
+  )
+
+knitr::kable(demographics_summary, 
+             caption = "Number of Participants by Education and Sex")
+```
+
+```{r demographics_plot}
+# Create age distribution visualization
+ggplot(nhanes_data, aes(x = age, fill = sex)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~education) +
+  labs(
+    title = "Age Distribution by Education Level and Sex",
+    x = "Age (years)",
+    y = "Density",
+    fill = "Sex"
+  ) +
+  theme_minimal()
+```
+
+The distribution shows more participants with education beyond high school. Age distributions are fairly similar across education levels, though those with less than high school education tend to be slightly older. Gender balance is relatively even across all education categories.
+
+### Plot: Total activity vs age
+
+
+
+```{r total_activity_plot}
+# Calculate total activity for each participant
+total_activity <- nhanes_data %>%
+  mutate(
+    total_activity = rowSums(select(., starts_with("min")))
+  )
+
+# Create total activity vs age plot
+ggplot(total_activity, aes(x = age, y = total_activity, color = sex)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", se = FALSE) +
+  facet_wrap(~education) +
+  labs(
+    title = "Total Daily Activity by Age, Education, and Sex",
+    x = "Age (years)",
+    y = "Total Activity (MIMS)",
+    color = "Sex"
+  ) +
+  theme_minimal()
+```
+
+Total activity generally decreases with age across all education levels. Women tend to have slightly higher activity than men, particularly in the "More than high school" category. The decline in activity with age appears steepest for those with less than high school education.
+
+### Plot: 24-hour activity time courses
+
+
+
+```{r activity_time_course}
+# Prepare time series data
+activity_by_time <- nhanes_data %>%
+  pivot_longer(
+    cols = starts_with("min"),
+    names_to = "minute",
+    values_to = "mims",
+    names_prefix = "min"
+  ) %>%
+  mutate(
+    minute = as.numeric(minute),
+    hour = minute / 60
+  ) %>%
+  group_by(education, sex, minute) %>%
+  summarize(mean_mims = mean(mims, na.rm = TRUE), .groups = "drop") %>%
+  mutate(hour = minute / 60)
+
+# Create 24-hour activity pattern plot
+ggplot(activity_by_time, aes(x = hour, y = mean_mims, color = sex)) +
+  geom_smooth(se = FALSE, size = 1) +
+  facet_wrap(~education) +
+  labs(
+    title = "24-Hour Activity Patterns by Education and Sex",
+    x = "Hour of Day",
+    y = "Average Activity (MIMS)",
+    color = "Sex"
+  ) +
+  scale_x_continuous(breaks = seq(0, 24, 4)) +
+  theme_minimal()
+```
+
+All groups show similar daily patterns: low activity during sleeping hours (midnight to ~5am), rising activity in the morning, and peaks during midday and early evening. Those with more education show slightly higher midday activity. Women tend to have higher activity levels throughout the day, especially during waking hours. The late evening drop-off (around 8-9pm) is consistent across all groups.
+
+---
+
