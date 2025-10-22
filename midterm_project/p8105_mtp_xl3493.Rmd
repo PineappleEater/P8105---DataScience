@@ -1,0 +1,445 @@
+---
+title: "Midterm Project: Analysis of Posture and Enlarged External Occipital Protuberance"
+author: "Xuange Liang (xl3493)"
+date: "`r Sys.Date()`"
+output: github_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+This analysis examines data from a 2018 Nature Scientific Reports study
+on the relationship between forward head protraction (FHP) and enlarged
+external occipital protuberance (EOP). The study gained attention when
+popularized as evidence of phone usage causing "horns" in millennials.
+Following skepticism and critique, the authors published a correction.
+This report evaluates data quality, reproduces key findings, visualizes
+relationships, and assesses whether the data support the phone-horn
+hypothesis.
+
+## Problem 1: Data Import and Cleaning
+
+### Loading required libraries and importing data
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(knitr)
+library(patchwork)
+library(readxl)
+
+# Read the data, skipping the header rows with variable definitions
+raw_data <- read_excel("p8105_mtp_data.xlsx", sheet = "this one", skip = 7)
+
+# Clean and format the dataset
+eop_data <- raw_data %>%
+  clean_names() %>%
+  mutate(
+    # Create factor for sex
+    sex = factor(sex, levels = c(0, 1), labels = c("Female", "Male")),
+
+    # Parse age group as numeric and combine 6, 7, 8 into the 60+ category
+    age_group_num = as.numeric(age_group),
+    age_group_num = case_when(
+      is.na(age_group_num) ~ NA_real_,
+      age_group_num >= 6 ~ 6,
+      TRUE ~ age_group_num
+    ),
+
+    # Create ordered factor for age group
+    age_group = factor(
+      age_group_num,
+      levels = 1:6,
+      labels = c("<18", "18-30", "31-40", "41-50", "51-60", "60+"),
+      ordered = TRUE
+    ),
+
+    # Parse EOP size category (currently character with codes 0-5)
+    eop_size_code = as.numeric(eop_size),
+
+    # Create ordered factor for EOP size category
+    eop_size = factor(
+      eop_size_code,
+      levels = 0:5,
+      labels = c("0-5mm", "5-10mm", "10-15mm", "15-20mm", "20-25mm", "25+mm"),
+      ordered = TRUE
+    ),
+
+    # Fill missing EOP size (mm) with 0 when category is 0 (as indicated in header)
+    eop_size_mm = case_when(
+      eop_size_code == 0 & is.na(eop_size_mm) ~ 0,
+      TRUE ~ eop_size_mm
+    ),
+
+    # Parse FHP category (currently character with codes 0-2)
+    fhp_cat_num = as.numeric(fhp_category),
+
+    # Create ordered factor for FHP category
+    fhp_category = factor(
+      fhp_cat_num,
+      levels = 0:2,
+      labels = c("0-10mm", "10-20mm", "20-30mm"),
+      ordered = TRUE
+    ),
+
+    # Create binary variable for enlarged EOP (categories 2-5 vs 0-1)
+    eop_enlarged = eop_size_code >= 2
+  ) %>%
+  select(-age_group_num, -fhp_cat_num)
+```
+
+### Dataset description
+
+```{r}
+# Age and gender distribution table
+demographics <- eop_data %>%
+  group_by(age_group, sex) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = sex,
+    values_from = count
+  ) %>%
+  mutate(Total = Female + Male)
+
+kable(demographics,
+      caption = "Participant Distribution by Age Group and Sex")
+```
+
+Participant Distribution by Age Group and Sex
+
+The dataset contains **1221** participants. The sample includes 607
+males and 614 females. Key variables include age (range: 17-88 years),
+EOP size (continuous mm and categorical), FHP size (continuous mm and
+categorical), and EOP visibility classification. The majority of
+participants fall in the 18-30 and 60+ age groups, suggesting purposive
+sampling rather than representative population sampling.
+
+### Data quality issues
+
+```{r}
+# Check consistency between continuous EOP size and categorical assignment
+eop_consistency <- eop_data %>%
+  filter(!is.na(eop_size_mm)) %>%
+  mutate(
+    # Expected category based on continuous measurement
+    expected_category = case_when(
+      eop_size_mm < 5 ~ "0-5mm",
+      eop_size_mm < 10 ~ "5-10mm",
+      eop_size_mm < 15 ~ "10-15mm",
+      eop_size_mm < 20 ~ "15-20mm",
+      eop_size_mm < 25 ~ "20-25mm",
+      TRUE ~ "25+mm"
+    ),
+    # Check if actual matches expected
+    match = as.character(eop_size) == expected_category
+  )
+
+# Count mismatches
+n_mismatches <- sum(!eop_consistency$match)
+mismatch_rate <- mean(!eop_consistency$match) * 100
+
+# Show examples of mismatches
+mismatch_examples <- eop_consistency %>%
+  filter(!match) %>%
+  select(sex, age, eop_size_mm, expected_category, eop_size) %>%
+  slice_head(n = 5)
+
+kable(mismatch_examples,
+      caption = "Examples of EOP Size Category Mismatches")
+```
+
+Examples of EOP Size Category Mismatches
+
+Among participants with continuous EOP measurements, a substantial
+number exhibit categorical assignments inconsistent with their measured
+values (as shown in the examples above). The original dataset contained
+518 missing continuous EOP values that were categorically classified.
+These data quality issues-including misclassifications and missing
+measurements-raise concerns about data entry accuracy and measurement
+reliability.
+
+## Problem 2: Visualization
+
+### Improved Figure 3: FHP Distribution
+
+```{r}
+# The original Figure 3 showed only mean +/- SD
+# This improved version shows the actual distribution
+
+plot_fhp <- eop_data %>%
+  filter(!is.na(fhp_size_mm)) %>%
+  ggplot(aes(x = age_group, y = fhp_size_mm, fill = sex)) +
+  geom_violin(alpha = 0.6, position = position_dodge(0.9)) +
+  geom_boxplot(width = 0.2, position = position_dodge(0.9),
+               outlier.shape = NA, alpha = 0.8) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3,
+               position = position_dodge(0.9), color = "black", fill = "white") +
+  labs(
+    title = "Distribution of Forward Head Protraction by Age and Sex",
+    subtitle = "Violin plots show distribution; boxes show IQR; diamonds indicate means",
+    x = "Age Group",
+    y = "FHP Size (mm)",
+    fill = "Sex"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(size = 12, face = "bold")
+  )
+
+plot_fhp
+```
+
+
+### Improved Figure 4: Rate of Enlarged EOP
+
+```{r}
+# Original Figure 4 showed counts, not rates
+# This shows prevalence rates accounting for sample size differences
+
+eop_rates <- eop_data %>%
+  group_by(age_group, sex) %>%
+  summarize(
+    total = n(),
+    enlarged = sum(eop_enlarged, na.rm = TRUE),
+    rate = enlarged / total * 100,
+    .groups = "drop"
+  )
+
+plot_eop <- ggplot(eop_rates, aes(x = age_group, y = rate,
+                                   color = sex, group = sex)) +
+  geom_point(size = 4) +
+  geom_line(linewidth = 1.2) +
+  labs(
+    title = "Rate of Enlarged EOP by Age Group and Sex",
+    subtitle = "Enlarged EOP defined as size category >=2 (>=10mm)",
+    x = "Age Group",
+    y = "Prevalence Rate (%)",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+    axis.text.y = element_text(size = 11),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 10),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.position = "bottom"
+  )
+
+plot_eop
+```
+
+
+### Combined improved figures
+
+```{r}
+combined_plot <- plot_fhp / plot_eop +
+  plot_annotation(
+    title = "Improved Figures 3 and 4: Distribution and Prevalence Analysis",
+    tag_levels = "A"
+  )
+
+combined_plot
+```
+
+
+**Visualization Insights:** Panel A reveals FHP increases with age
+across both sexes, with substantial variation within groups. Males
+consistently show higher median FHP than females. Panel B demonstrates
+enlarged EOP prevalence is highest in younger age groups (18-30),
+contradicting expectations if age-related degeneration were the primary
+cause. Males have substantially higher enlarged EOP rates than females
+across all age groups.
+
+### FHP vs EOP by Age and Sex
+
+```{r}
+# Create 2x5 panel showing FHP-EOP relationship across demographics
+# Focus on 5 main age groups (18-30, 31-40, 41-50, 51-60, 60+)
+
+eop_data %>%
+  filter(!is.na(eop_size_mm) & !is.na(fhp_size_mm)) %>%
+  filter(age_group %in% c("18-30", "31-40", "41-50", "51-60", "60+")) %>%
+  ggplot(aes(x = fhp_size_mm, y = eop_size_mm)) +
+  geom_point(alpha = 0.5, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1.2) +
+  facet_grid(sex ~ age_group) +
+  labs(
+    title = "Relationship between FHP and EOP Size across Age Groups and Sex",
+    x = "FHP Size (mm)",
+    y = "EOP Size (mm)"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+```
+
+
+**Key Observations:** Positive correlations between FHP and EOP size
+exist across most demographic groups, though strength varies. The
+relationship appears strongest in younger males (18-30 and 31-40 age
+groups). The wide scatter suggests FHP explains only a portion of EOP
+variation, indicating other factors contribute to EOP development.
+
+## Problem 3: Reproducing Reported Results
+
+### Sample sizes by age group
+
+```{r}
+age_group_counts <- eop_data %>%
+  group_by(age_group) %>%
+  summarize(n = n()) %>%
+  arrange(age_group)
+
+kable(age_group_counts,
+      col.names = c("Age Group", "Count"),
+      caption = "Sample Sizes by Age Group")
+```
+
+Sample Sizes by Age Group
+
+The sample sizes show uneven distribution across age groups, with the
+largest groups being 18-30 (n=303) and 60+ (n=305). This matches the
+study's design of oversampling younger and older adults to examine age
+differences.
+
+### FHP statistics
+
+```{r}
+# Overall FHP statistics
+overall_fhp <- eop_data %>%
+  filter(!is.na(fhp_size_mm)) %>%
+  summarize(
+    mean = mean(fhp_size_mm),
+    sd = sd(fhp_size_mm),
+    median = median(fhp_size_mm),
+    min = min(fhp_size_mm),
+    max = max(fhp_size_mm),
+    n = n()
+  )
+
+# FHP by sex
+fhp_by_sex <- eop_data %>%
+  filter(!is.na(fhp_size_mm)) %>%
+  group_by(sex) %>%
+  summarize(
+    mean = mean(fhp_size_mm),
+    sd = sd(fhp_size_mm),
+    n = n(),
+    .groups = "drop"
+  )
+
+kable(overall_fhp, digits = 2,
+      caption = "Overall FHP Statistics")
+```
+
+Overall FHP Statistics
+
+```{r}
+kable(fhp_by_sex, digits = 2,
+      caption = "FHP Statistics by Sex")
+```
+
+FHP Statistics by Sex
+
+Mean FHP is 26.1mm (SD = 13.01mm), consistent with the reported values.
+Males have higher mean FHP (28.51mm) than females (23.73mm).
+
+### EEOP prevalence (33% claim)
+
+```{r}
+# Test different definitions of EEOP
+eop_size_values <- eop_data %>% pull(eop_size_code)
+eeop_indicator <- eop_data %>% pull(eop_enlarged)
+visibility_values <- eop_data %>% pull(eop_visibility_classification)
+
+eeop_definitions <- tibble(
+  Definition = c(
+    "EOP >=10mm (category >=2)",
+    "EOP >=5mm (category >=1)",
+    "EOP >=15mm (category >=3)",
+    "EOP visibility = 2"
+  ),
+  Prevalence = c(
+    mean(eeop_indicator, na.rm = TRUE) * 100,
+    mean(eop_size_values >= 1, na.rm = TRUE) * 100,
+    mean(eop_size_values >= 3, na.rm = TRUE) * 100,
+    mean(visibility_values == 2, na.rm = TRUE) * 100
+  ),
+  n = c(
+    sum(eeop_indicator, na.rm = TRUE),
+    sum(eop_size_values >= 1, na.rm = TRUE),
+    sum(eop_size_values >= 3, na.rm = TRUE),
+    sum(visibility_values == 2, na.rm = TRUE)
+  )
+)
+
+kable(eeop_definitions, digits = 1,
+      caption = "EEOP Prevalence Under Different Definitions")
+```
+
+Using the definition of enlarged EOP as size category >=2 (>=10mm), the prevalence is **32.3%**, which closely matches the reported 33%. This suggests EEOP refers to external occipital protuberances measuring 10mm or larger.
+
+### FHP in older subjects
+
+    
+
+```{r}
+# Examine FHP >40mm in over-60s
+older_fhp <- eop_data %>%
+  filter(age >= 60, !is.na(fhp_size_mm)) %>%
+  summarize(
+    total = n(),
+    fhp_over_40 = sum(fhp_size_mm > 40),
+    percentage = fhp_over_40 / total * 100
+  )
+
+# Also check age trend in FHP
+fhp_age_trend <- eop_data %>%
+  filter(!is.na(fhp_size_mm)) %>%
+  group_by(age_group) %>%
+  summarize(
+    mean_fhp = mean(fhp_size_mm),
+    fhp_over_40_pct = sum(fhp_size_mm > 40) / n() * 100,
+    n = n(),
+    .groups = "drop"
+  )
+
+kable(older_fhp, digits = 1,
+      caption = "FHP >40mm in Participants Aged 60+")
+
+kable(fhp_age_trend, digits = 1,
+      caption = "FHP Trends Across Age Groups")
+```
+
+## Problem 4: Discussion
+
+The original study's data analysis contains significant quality issues,
+with substantial proportions of categorical EOP classifications
+inconsistent with continuous measurements, and many records lacking
+complete data. Despite these concerns, key statistical claims are
+reproducible. However, the data do not support the "phone horns"
+hypothesis. The highest enlarged EOP prevalence occurs in 18-30
+year-olds, consistent with the authors' original claim, but this
+cross-sectional design cannot establish causation. Alternative
+explanations include genetic variation, occupational factors, or
+measurement artifacts. The correlation between FHP and EOP size is
+modest and does not demonstrate that phone use causes either condition.
+Future research should include longitudinal data tracking individuals
+over time, objective measures of phone usage, biomechanical assessments,
+and genetic controls to properly test this hypothesis.
+

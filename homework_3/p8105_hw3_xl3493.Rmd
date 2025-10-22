@@ -11,8 +11,6 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 ## Problem 1: Instacart Data Analysis
 
-This problem explores the Instacart online grocery shopping dataset to understand purchasing patterns and popular products.
-
 ### Loading required libraries and data
 
 ```{r load_libraries_and_instacart}
@@ -41,16 +39,6 @@ head(instacart)
 tail(instacart)
 ```
 
-<!-- Write a description:
-The dataset contains ___ rows and ___ columns. Main variables include:
-- 
-- 
-- 
-
-Example observations:
-
-
--->
 The dataset contains **`r nrow(instacart)`** rows and **`r ncol(instacart)`** columns. Main variables include:
 - `order_id`: Unique identifier for each order
 - `product_id`: Unique identifier for each product
@@ -159,8 +147,6 @@ Both products are typically purchased in the afternoon, with mean hours ranging 
 ---
 
 ## Problem 2: Zillow Rental Data Analysis
-
-This problem analyzes rental price trends across New York City ZIP codes using Zillow data.
 
 ### Import and clean the data
 
@@ -325,8 +311,6 @@ combined_plot
 ---
 
 ## Problem 3: NHANES Accelerometer Data
-
-This problem analyzes physical activity patterns using accelerometer data from the NHANES study.
 
 ### Load and tidy the datasets
 
