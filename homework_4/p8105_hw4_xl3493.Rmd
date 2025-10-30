@@ -1,0 +1,213 @@
+---
+title: "NYC Restaurant Inspections Dashboard"
+author: "Xuange Liang (xl3493)"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    source_code: embed
+---
+
+<!-- ```{r setup, include=FALSE}
+install.packages("tidyverse")
+install.packages("plotly")
+install.packages("devtools")
+devtools::install_github("p8105/p8105.datasets")
+``` -->
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(plotly)
+library(p8105.datasets)
+
+# Load and clean data
+data("rest_inspec")
+
+# Filter and clean the dataset
+# Focus on recent data and common cuisines
+rest_clean <- rest_inspec %>%
+  filter(
+    !is.na(score),
+    !is.na(grade),
+    grade %in% c("A", "B", "C"),
+    boro != "Missing",
+    boro != "0",  # Remove invalid borough code
+    !is.na(cuisine_description)
+  ) %>%
+  mutate(
+    inspection_date = as.Date(inspection_date),
+    year = year(inspection_date)
+  ) %>%
+  filter(year >= 2015, year <= 2017)
+
+# Get top 10 cuisines by number of restaurants
+top_cuisines <- rest_clean %>%
+  count(cuisine_description, sort = TRUE) %>%
+  head(10) %>%
+  pull(cuisine_description)
+
+# Filter for top cuisines
+rest_filtered <- rest_clean %>%
+  filter(cuisine_description %in% top_cuisines) %>%
+  mutate(
+    cuisine_display = if_else(
+      str_detect(cuisine_description, regex("^Latin", ignore_case = TRUE)),
+      "Latin",
+      cuisine_description
+    )
+  )
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Distribution of Restaurant Grades by Borough
+
+```{r}
+# Create grouped bar chart
+grade_by_boro <- rest_filtered %>%
+  count(boro, grade) %>%
+  group_by(boro) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+plot_bar <- plot_ly(
+  data = grade_by_boro,
+  x = ~boro,
+  y = ~percentage,
+  color = ~grade,
+  type = "bar",
+  colors = c("A" = "#2E7D32", "B" = "#FFA726", "C" = "#D32F2F"),
+  text = ~paste0(round(percentage, 1), "%"),
+  textposition = "auto",
+  hovertemplate = paste(
+    "<b>Borough:</b> %{x}<br>",
+    "<b>Grade:</b> %{fullData.name}<br>",
+    "<b>Percentage:</b> %{y:.1f}%<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    barmode = "stack",
+    xaxis = list(title = "Borough"),
+    yaxis = list(title = "Percentage (%)"),
+    legend = list(title = list(text = "Grade")),
+    hovermode = "closest"
+  )
+
+plot_bar
+```
+
+### Inspection Scores by Top 10 Cuisine Types
+
+```{r}
+# Create box plot for cuisine types
+plot_box <- plot_ly(
+  data = rest_filtered,
+  x = ~reorder(cuisine_display, score, median),
+  y = ~score,
+  color = ~cuisine_display,
+  type = "box",
+  colors = "Set3",
+  hovertemplate = paste(
+    "<b>Cuisine:</b> %{x}<br>",
+    "<b>Score:</b> %{y}<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    xaxis = list(title = "Cuisine Type", tickangle = -45),
+    yaxis = list(title = "Inspection Score"),
+    showlegend = FALSE,
+    hovermode = "closest"
+  )
+
+plot_box
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Average Inspection Score Trends Over Time by Borough
+
+```{r}
+# Create line plot showing trends over time
+score_trends <- rest_filtered %>%
+  group_by(boro, year, month = month(inspection_date)) %>%
+  summarize(avg_score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  mutate(date = as.Date(paste(year, month, "01", sep = "-")))
+
+plot_line <- plot_ly(
+  data = score_trends,
+  x = ~date,
+  y = ~avg_score,
+  color = ~boro,
+  type = "scatter",
+  mode = "lines+markers",
+  colors = "Set2",
+  hovertemplate = paste(
+    "<b>Borough:</b> %{fullData.name}<br>",
+    "<b>Date:</b> %{x|%Y-%m}<br>",
+    "<b>Avg Score:</b> %{y:.1f}<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Average Inspection Score"),
+    legend = list(title = list(text = "Borough")),
+    hovermode = "closest"
+  )
+
+plot_line
+```
+
+### Score Distribution: Top 5 Cuisines vs Borough
+
+```{r}
+# Create scatter plot with top 5 cuisines
+top_5_cuisines <- rest_clean %>%
+  count(cuisine_description, sort = TRUE) %>%
+  head(5) %>%
+  pull(cuisine_description)
+
+rest_scatter <- rest_clean %>%
+  filter(cuisine_description %in% top_5_cuisines) %>%
+  group_by(cuisine_description, boro) %>%
+  summarize(
+    avg_score = mean(score, na.rm = TRUE),
+    count = n(),
+    .groups = "drop"
+  )
+
+plot_scatter <- plot_ly(
+  data = rest_scatter,
+  x = ~avg_score,
+  y = ~boro,
+  size = ~count,
+  color = ~cuisine_description,
+  type = "scatter",
+  mode = "markers",
+  colors = "Paired",
+  marker = list(
+    sizemode = "diameter",
+    opacity = 0.7,
+    line = list(width = 1, color = "white")
+  ),
+  hovertemplate = paste(
+    "<b>Cuisine:</b> %{fullData.name}<br>",
+    "<b>Borough:</b> %{y}<br>",
+    "<b>Avg Score:</b> %{x:.1f}<br>",
+    "<b>Count:</b> %{marker.size}<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    xaxis = list(title = "Average Inspection Score"),
+    yaxis = list(title = "Borough"),
+    legend = list(title = list(text = "Cuisine Type")),
+    hovermode = "closest"
+  )
+
+plot_scatter
+```
