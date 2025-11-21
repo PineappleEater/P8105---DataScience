@@ -358,7 +358,7 @@ baltimore_ci_low <- baltimore_tidy$conf.low
 baltimore_ci_high <- baltimore_tidy$conf.high
 ```
 
-In Baltimore, MD, the estimated proportion of unsolved homicides is **`r round(baltimore_prop, 3)`** with 95% CI (`r round(baltimore_ci_low, 3)`, `r round(baltimore_ci_high, 3)`).
+**Baltimore, MD:** Proportion = `r round(baltimore_prop, 3)` (95% CI: `r round(baltimore_ci_low, 3)`, `r round(baltimore_ci_high, 3)`).
 
 ### Proportion tests for all cities
 
@@ -370,7 +370,7 @@ prop_test_tidy <- function(unsolved, total) {
     return(tibble(estimate = NA, conf.low = NA, conf.high = NA))
   }
   
-  # Perform test and tidy results (implicit return)
+  # Perform test and tidy results
   prop.test(x = unsolved, n = total) %>%
     broom::tidy() %>%
     select(estimate, conf.low, conf.high)

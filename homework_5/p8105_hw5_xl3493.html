@@ -1110,7 +1110,7 @@ for Baltimore, MD</h3>
 <span id="cb29-6"><a href="#cb29-6" tabindex="-1"></a>baltimore_test <span class="ot">&lt;-</span> <span class="fu">prop.test</span>(</span>
 <span id="cb29-7"><a href="#cb29-7" tabindex="-1"></a>  <span class="at">x =</span> baltimore_data<span class="sc">$</span>unsolved_homicides,</span>
 <span id="cb29-8"><a href="#cb29-8" tabindex="-1"></a>  <span class="at">n =</span> baltimore_data<span class="sc">$</span>total_homicides</span>
-<span id="cb29-9"><a href="#cb29-9" tabindex="-1"></a>) </span>
+<span id="cb29-9"><a href="#cb29-9" tabindex="-1"></a>)</span>
 <span id="cb29-10"><a href="#cb29-10" tabindex="-1"></a></span>
 <span id="cb29-11"><a href="#cb29-11" tabindex="-1"></a><span class="co"># Tidy the results</span></span>
 <span id="cb29-12"><a href="#cb29-12" tabindex="-1"></a>baltimore_tidy <span class="ot">&lt;-</span> baltimore_test <span class="sc">%&gt;%</span></span>
@@ -1126,9 +1126,8 @@ for Baltimore, MD</h3>
 <span id="cb31-2"><a href="#cb31-2" tabindex="-1"></a>baltimore_prop <span class="ot">&lt;-</span> baltimore_tidy<span class="sc">$</span>estimate</span>
 <span id="cb31-3"><a href="#cb31-3" tabindex="-1"></a>baltimore_ci_low <span class="ot">&lt;-</span> baltimore_tidy<span class="sc">$</span>conf.low</span>
 <span id="cb31-4"><a href="#cb31-4" tabindex="-1"></a>baltimore_ci_high <span class="ot">&lt;-</span> baltimore_tidy<span class="sc">$</span>conf.high</span></code></pre></div>
-<p>In Baltimore, MD, the estimated proportion of unsolved homicides is
-<strong>0.646</strong> (95% CI: <span class="math display">\[0.628,
-0.663\]</span>).</p>
+<p><strong>Baltimore, MD:</strong> Proportion = 0.646 (95% CI: 0.628,
+0.663).</p>
 <h3 id="id_034-proportion-tests-for-all-cities">0.3.4 Proportion tests
 for all cities</h3>
 <div class="sourceCode" id="cb32"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" tabindex="-1"></a><span class="co"># Function to perform prop.test and extract results</span></span>
