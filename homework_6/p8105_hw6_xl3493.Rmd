@@ -1,0 +1,565 @@
+---
+title: "Homework 6"
+author: "Xuange Liang (xl3493)"
+date: "`r Sys.Date()`"
+output:
+    github_document:
+      toc: true
+      toc_depth: 2
+      number_sections: true
+    html_document:
+      toc: true
+      toc_depth: 2
+      number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Problem 1: Homicide Data Analysis with Logistic Regression
+
+### Loading required libraries
+
+```{r load_libraries}
+library(tidyverse)
+library(broom)
+library(modelr)
+library(purrr)
+set.seed(999)
+```
+
+### Loading and cleaning the data
+
+```{r load_homicide_data}
+# Load data from Washington Post GitHub repository
+homicide_data <- read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv")
+
+# View structure
+head(homicide_data)
+str(homicide_data)
+```
+
+### Data cleaning and preparation
+
+```{r clean_data}
+homicide_clean <- homicide_data %>%
+  mutate(
+    city_state = str_c(city, state, sep = ", "), # Create city_state variable
+
+    resolved = as.numeric(disposition == "Closed by arrest"), # Binary solved variable
+    victim_age = as.numeric(victim_age) # Convert victim_age to numeric
+
+  ) %>%
+  filter(
+    !city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"), # Omit specified cities
+
+    victim_race %in% c("White", "Black")  # Filter for white/black victims
+
+  ) %>%
+  select(city_state, resolved, victim_age, victim_sex, victim_race)
+
+# View cleaned data
+head(homicide_clean)
+summary(homicide_clean)
+```
+
+**Description of cleaned data:**
+
+The cleaned homicide dataset contains 39,693 observations across 5 variables after applying the required filters. We created a `city_state` variable combining city and state, and a binary `resolved` variable indicating whether the homicide was solved (1 = Closed by arrest, 0 = otherwise). We excluded Dallas, TX; Phoenix, AZ; Kansas City, MO; and Tulsa, AL as specified, and limited our analysis to cases where the victim's race was White or Black. The `victim_age` variable was converted to numeric. The dataset includes 19,420 resolved cases and 20,273 unresolved cases. Among victims, 33,749 are male, 5,903 are female, and 41 have unknown sex. The racial distribution shows 33,361 Black victims and 6,332 White victims.
+
+### Logistic regression for Baltimore, MD
+
+```{r baltimore_glm}
+# Filter Baltimore data
+baltimore_data <- homicide_clean %>%
+  filter(city_state == "Baltimore, MD")
+
+# Fit logistic regression
+baltimore_fit <- glm(
+  resolved ~ victim_age + victim_sex + victim_race,
+  data = baltimore_data,
+  family = binomial()
+)
+
+# Tidy the results
+baltimore_tidy <- baltimore_fit %>%
+  broom::tidy() %>%
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>%
+  select(term, estimate, OR, CI_lower, CI_upper, p.value)
+
+# View results
+baltimore_tidy
+
+# Extract OR and CI for male vs female comparison
+baltimore_male_OR <- baltimore_tidy %>%
+  filter(term == "victim_sexMale")
+```
+
+**Interpretation for Baltimore, MD:**
+
+For the city of Baltimore, MD, the adjusted odds ratio for solving homicides comparing male victims to female victims is 0.426 (95% CI: 0.325, 0.558). This means that, holding victim age and race constant, homicides with male victims have 0.426 times the odds of being resolved compared to homicides with female victims. In other words, homicides with male victims are significantly less likely to be solved than those with female victims. The confidence interval does not include 1, indicating this difference is statistically significant at the 0.05 level (p < 0.001).
+
+### Logistic regression for all cities
+
+```{r all_cities_glm}
+# Function to fit logistic regression and extract OR for victim_sex
+fit_logistic <- function(df) {
+  # Fit model
+  fit <- glm(
+    resolved ~ victim_age + victim_sex + victim_race,
+    data = df,
+    family = binomial()
+  )
+
+  # Tidy and extract male vs female OR
+  fit %>%
+    broom::tidy() %>%
+    filter(term == "victim_sexMale") %>%
+    mutate(
+      OR = exp(estimate),
+      CI_lower = exp(estimate - 1.96 * std.error),
+      CI_upper = exp(estimate + 1.96 * std.error)
+    ) %>%
+    select(term, OR, CI_lower, CI_upper)
+}
+
+# Run logistic regression for each city
+all_cities_results <- homicide_clean %>%
+  nest(data = -city_state) %>%
+  mutate(
+    model_results = map(data, fit_logistic)
+  ) %>%
+  select(-data) %>%
+  unnest(model_results)
+
+# View results
+head(all_cities_results)
+```
+
+### Plot: Odds ratios and confidence intervals by city
+
+```{r or_plot}
+# Create plot
+or_plot <- all_cities_results %>%
+  mutate(
+    city_state = fct_reorder(city_state, OR)
+  ) %>%
+  ggplot(aes(x = city_state, y = OR)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_errorbar(
+    aes(ymin = CI_lower, ymax = CI_upper),
+    width = 0.3,
+    color = "steelblue",
+    alpha = 0.6
+  ) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", alpha = 0.5) +
+  coord_flip() +
+  labs(
+    title = "Adjusted Odds Ratios for Solving Homicides: Male vs Female Victims",
+    subtitle = "Error bars represent 95% confidence intervals",
+    x = "City, State",
+    y = "Adjusted Odds Ratio (Male vs Female)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 8)
+  )
+
+or_plot
+```
+
+
+1. **Overall Pattern**: Most cities show ORs below 1 (indicated by the red dashed reference line), suggesting that in most cities, homicides with male victims are less likely to be solved than those with female victims, after adjusting for victim age and race.
+
+2. **Lowest ORs**: New York, NY has the lowest OR (0.262), followed by Baton Rouge, LA (0.381) and Omaha, NE (0.382). In these cities, male victim homicides are dramatically less likely to be solved compared to female victim homicides.
+
+3. **Highest ORs**: Albuquerque, NM shows the highest OR (1.77). In this city, the pattern reverses, with male victim homicides actually having higher odds of being solved, though the confidence intervals are wide and include 1, suggesting these differences may not be statistically significant.
+
+4. **Statistical Significance**: For most cities, the confidence intervals do not include 1, indicating statistically significant differences in resolution rates between male and female victim homicides.
+
+---
+
+## Problem 2: Bootstrap Analysis of Weather Data
+
+### Loading the weather data
+
+```{r load_weather}
+library(p8105.datasets)
+data("weather_df")
+
+# Filter for Central Park data only
+weather_df <- weather_df %>%
+  filter(name == "CentralPark_NY") %>%
+  select(date, tmax, tmin, prcp)
+
+# View data structure
+head(weather_df)
+str(weather_df)
+```
+
+### Bootstrap function
+
+```{r bootstrap_function}
+# Function to perform one bootstrap sample and calculate r^2 and log(beta1*beta2)
+bootstrap_analysis <- function(df) {
+  # Sample with replacement
+  boot_sample <- sample_frac(df, replace = TRUE)
+
+  # Fit linear model: tmax ~ tmin + prcp
+  fit <- lm(tmax ~ tmin + prcp, data = boot_sample)
+
+  # Extract r^2 using broom::glance()
+  r_squared <- fit %>%
+    broom::glance() %>%
+    pull(r.squared)
+
+  # Extract beta1 and beta2 using broom::tidy()
+  beta_estimates <- fit %>%
+    broom::tidy() %>%
+    filter(term %in% c("tmin", "prcp")) %>%
+    pull(estimate)
+
+  # Calculate log(beta1 * beta2)
+  # Handle cases where product might be negative or zero
+  beta_product <- beta_estimates[1] * beta_estimates[2]
+  log_beta_product <- ifelse(beta_product > 0, log(beta_product), NA)
+
+  tibble(
+    r_squared = r_squared,
+    log_beta_product = log_beta_product
+  )
+}
+
+bootstrap_analysis(weather_df)
+```
+
+### Running 5000 bootstrap samples
+
+```{r bootstrap_samples}
+bootstrap_results <- tibble(
+  iteration = 1:5000
+) %>%
+  mutate(
+    results = map(iteration, ~bootstrap_analysis(weather_df))
+  ) %>%
+  unnest(results)
+
+head(bootstrap_results)
+summary(bootstrap_results)
+```
+
+### Distribution plots
+
+```{r distribution_plots}
+# Plot distribution of r^2
+r2_plot <- bootstrap_results %>%
+  ggplot(aes(x = r_squared)) +
+  geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+  geom_vline(
+    xintercept = mean(bootstrap_results$r_squared),
+    linetype = "dashed",
+    color = "red",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Distribution of Bootstrap Estimates: R²",
+    subtitle = paste("Mean =", round(mean(bootstrap_results$r_squared), 4)),
+    x = "R²",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"))
+
+r2_plot
+
+# Plot distribution of log(beta1*beta2)
+log_beta_plot <- bootstrap_results %>%
+  filter(!is.na(log_beta_product)) %>%
+  ggplot(aes(x = log_beta_product)) +
+  geom_histogram(bins = 50, fill = "darkgreen", alpha = 0.7) +
+  geom_vline(
+    xintercept = mean(bootstrap_results$log_beta_product, na.rm = TRUE),
+    linetype = "dashed",
+    color = "red",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Distribution of Bootstrap Estimates: log(β₁×β₂)",
+    subtitle = paste("Mean =", round(mean(bootstrap_results$log_beta_product, na.rm = TRUE), 4)),
+    x = "log(β₁×β₂)",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"))
+
+log_beta_plot
+```
+
+**Description of distributions:**
+
+**Distribution of R²**: The bootstrap distribution of R² estimates is approximately normal and centered around 0.913 (mean = 0.913, median = 0.913). The distribution is relatively narrow with a standard deviation of 0.0086, indicating that the R² estimate is quite stable across bootstrap samples. The distribution shows slight left skewness, with values ranging roughly from 0.87 to 0.94. This high R² value indicates that `tmin` and `prcp` together explain about 91% of the variability in `tmax`, demonstrating a very strong linear relationship.
+
+**Distribution of log(β̂₁×β̂₂)**: The bootstrap distribution of log(β̂₁×β̂₂) appears to be left-skewed with a long left tail (mean = -7.56, median = -7.38). The distribution has considerable spread (SD = 1.24) and ranges approximately from -12 to -4. Notably, there are 4,469 NA values (out of 5,000 bootstrap samples, approximately 89%), which occur when the product β̂₁×β̂₂ is negative. This happens because while the coefficient for `tmin` (β̂₁) is positive, the coefficient for `prcp` (β̂₂) is typically negative (more precipitation is associated with lower maximum temperature when controlling for minimum temperature), making their product negative and the log undefined. The distribution we observe represents only those samples where both coefficients happened to have the same sign.
+
+### 95% Confidence Intervals
+
+```{r confidence_intervals}
+# Calculate 95% CI for r^2
+r2_ci <- bootstrap_results %>%
+  summarize(
+    lower_ci = quantile(r_squared, 0.025),
+    upper_ci = quantile(r_squared, 0.975)
+  )
+
+# Calculate 95% CI for log(beta1*beta2)
+log_beta_ci <- bootstrap_results %>%
+  filter(!is.na(log_beta_product)) %>%
+  summarize(
+    lower_ci = quantile(log_beta_product, 0.025),
+    upper_ci = quantile(log_beta_product, 0.975)
+  )
+
+# Display results
+cat("95% CI for R²:", r2_ci$lower_ci, "to", r2_ci$upper_ci, "\n")
+cat("95% CI for log(β₁×β₂):", log_beta_ci$lower_ci, "to", log_beta_ci$upper_ci, "\n")
+```
+
+**95% CI for R²**: (0.895, 0.928). We are 95% confident that the true proportion of variability in maximum temperature explained by minimum temperature and precipitation falls between 0.895 and 0.928. 
+
+**95% CI for log(β̂₁×β̂₂)**: (-10.61, -5.63). Among the bootstrap samples where the product β̂₁×β̂₂ was positive (allowing the log transformation), we are 95% confident that the true value of log(β̂₁×β̂₂) falls between -10.61 and -5.63. 
+
+---
+
+## Problem 3: Birthweight Analysis
+
+### Loading and cleaning the data
+
+```{r load_birthweight}
+# Load birthweight data
+birthweight_data <- read_csv("https://p8105.com/data/birthweight.csv")
+
+# View structure
+head(birthweight_data)
+str(birthweight_data)
+
+# Check for missing data
+sum(is.na(birthweight_data))
+```
+
+### Data cleaning and preparation
+
+```{r clean_birthweight}
+# Convert categorical variables to factors
+birthweight_clean <- birthweight_data %>%
+  mutate(
+    babysex = factor(babysex, levels = c(1, 2), labels = c("Male", "Female")),
+    frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9),
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other", "Unknown")),
+    mrace = factor(mrace, levels = c(1, 2, 3, 4, 8),
+                   labels = c("White", "Black", "Asian", "Puerto Rican", "Other")),
+    malform = factor(malform, levels = c(0, 1), labels = c("Absent", "Present"))
+  )
+
+# Check data summary
+summary(birthweight_clean)
+```
+
+**Description of cleaned data:**
+
+The birthweight dataset contains 4,342 observations with 20 variables and no missing data. During data cleaning, we converted categorical variables to factors with meaningful labels: `babysex` (Male/Female), `frace` (father's race), `mrace` (mother's race), and `malform` (malformation presence). The outcome variable `bwt` (birthweight in grams) has a mean of approximately 3,114 grams. Key predictors include continuous variables like `blength` (baby's length), `bhead` (head circumference), `gaweeks` (gestational age), `delwt` (mother's delivery weight), and `smoken` (average cigarettes per day during pregnancy), as well as categorical variables for parental race and baby sex. 
+
+### Proposed regression model
+
+```{r my_model}
+# Proposed model based on hypothesized structure
+# Model includes key biological and medical factors affecting birthweight
+my_model <- lm(
+  bwt ~ blength + gaweeks + bhead + delwt + mrace + smoken + wtgain,
+  data = birthweight_clean
+)
+
+# View model summary
+summary(my_model)
+broom::tidy(my_model)
+```
+
+**Description of modeling process:**
+
+My proposed model is based on a hypothesized structure informed by biological and medical knowledge about factors affecting birthweight:
+
+**Biological/Physical Development Factors:**
+- `blength` (baby's length): Longer babies tend to weigh more
+- `bhead` (baby's head circumference): Larger head circumference indicates more fetal development
+- `gaweeks` (gestational age): Longer gestation allows for more growth
+
+**Maternal Health Factors:**
+- `delwt` (mother's delivery weight): Maternal nutrition and body composition affect fetal growth
+- `wtgain` (weight gain during pregnancy): Adequate weight gain supports fetal development
+
+**Behavioral Risk Factors:**
+- `smoken` (cigarettes per day): Smoking during pregnancy is known to reduce birthweight
+
+**Demographic Factors:**
+- `mrace` (mother's race): May capture socioeconomic and genetic factors affecting birthweight
+
+The model achieved an adjusted R² of 0.715, indicating that these predictors explain approximately 71.5% of the variability in birthweight. All predictors except Asian mother's race showed strong statistical significance (p < 0.001). 
+
+### Residual plot
+
+```{r residual_plot}
+# Add predictions and residuals
+birthweight_clean <- birthweight_clean %>%
+  add_predictions(my_model) %>%
+  add_residuals(my_model)
+
+# Create residual plot
+residual_plot <- birthweight_clean %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted Values",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold"))
+
+residual_plot
+```
+
+
+1. **Clustering Pattern**: The residuals show a distinct clustering pattern with higher density at certain fitted values, particularly around 3,000-3,500 grams, which corresponds to typical birthweights. This clustering is expected given the natural distribution of birthweights.
+
+2. **Heteroscedasticity**: There appears to be relatively constant variance across fitted values, though there may be slightly less spread at the extreme ends (very low and very high fitted values) due to fewer observations in these ranges.
+
+3. **Mean Zero**: The residuals are generally centered around zero with no obvious systematic pattern, suggesting the linearity assumption is reasonably met.
+
+4. **Outliers**: There are some notable outliers, particularly:
+   - Several points with large negative residuals (observed birthweight much lower than predicted), with the most extreme around -1,100 grams
+   - Some points with large positive residuals (observed birthweight higher than predicted), with the most extreme around +2,300 grams
+   - These outliers may represent cases with unusual medical conditions or measurement errors
+
+    Despite the presence of outliers, the residual plot suggests that the linear model assumptions are reasonably satisfied.
+
+
+### Model comparisons
+
+```{r comparison_models}
+# Model 1: Length at birth and gestational age (main effects only)
+model_1 <- lm(bwt ~ blength + gaweeks, data = birthweight_clean)
+
+# Model 2: Head circumference, length, sex, and all interactions
+model_2 <- lm(bwt ~ bhead * blength * babysex, data = birthweight_clean)
+
+# View summaries
+summary(model_1)
+summary(model_2)
+```
+
+### Cross-validation
+
+```{r cross_validation}
+# Set up cross-validation
+cv_df <- crossv_mc(birthweight_clean, n = 100)
+
+# Fit models to each training set and calculate RMSE on test sets
+cv_results <- cv_df %>%
+  mutate(
+    my_model = map(train, ~lm(
+      bwt ~ blength + gaweeks + bhead + delwt + mrace + smoken + wtgain,
+      data = .x
+    )),
+    model_1 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    model_2 = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))
+  ) %>%
+  mutate(
+    rmse_my_model = map2_dbl(my_model, test, ~rmse(.x, .y)),
+    rmse_model_1 = map2_dbl(model_1, test, ~rmse(.x, .y)),
+    rmse_model_2 = map2_dbl(model_2, test, ~rmse(.x, .y))
+  )
+
+# View results
+head(cv_results)
+```
+
+### Comparison plot
+
+```{r cv_plot}
+# Prepare data for plotting
+cv_plot_data <- cv_results %>%
+  select(starts_with("rmse")) %>%
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>%
+  mutate(
+    model = factor(
+      model,
+      levels = c("my_model", "model_1", "model_2"),
+      labels = c(
+        "My Model",
+        "Main Effects Only",
+        "Interactions Model"
+      )
+    )
+  )
+
+# Create violin plot
+cv_plot <- cv_plot_data %>%
+  ggplot(aes(x = model, y = rmse, fill = model)) +
+  geom_violin(alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", alpha = 0.5) +
+  labs(
+    title = "Cross-Validated Prediction Error Comparison",
+    subtitle = "Based on 100-fold Monte Carlo cross-validation",
+    x = "Model",
+    y = "Root Mean Squared Error (RMSE)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+cv_plot
+
+# Calculate summary statistics
+cv_summary <- cv_plot_data %>%
+  group_by(model) %>%
+  summarize(
+    mean_rmse = mean(rmse),
+    median_rmse = median(rmse),
+    sd_rmse = sd(rmse)
+  )
+
+cv_summary
+```
+
+**Comparison and conclusions:**
+
+Based on 100-fold Monte Carlo cross-validation, we compared three models for predicting birthweight:
+
+**Cross-Validation Results (RMSE):**
+- **My Model** (blength + gaweeks + bhead + delwt + mrace + smoken + wtgain):
+  Mean RMSE = 273.9, Median RMSE = 274.6
+- **Model 1** (blength + gaweeks only):
+  Mean RMSE = 333.4, Median RMSE = 330.2
+- **Model 2** (bhead × blength × babysex interactions):
+  Mean RMSE = 289.0, Median RMSE = 289.3
+
+---
+
+## Session Info
+
+```{r session_info}
+sessionInfo()
+```
